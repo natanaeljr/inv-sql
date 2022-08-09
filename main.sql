@@ -25,3 +25,16 @@ select * from trades where date >= date('2022-04-01') AND date <= date('2022-04-
 SELECT date('now','start of month');
 -- end of month
 SELECT date('now','start of month','+1 month','-1 day');
+
+-- get all symbols
+select symbol from trades group by symbol;
+
+-- all buys from itau
+select symbol, op, date, sum(count) as count, sum(value) as value, sum(value)/sum(count) as price from trades where broker = 'itau' and op = 'C' group by symbol order by date;
+
+-- case/when example
+select *, (case when op = 'C' then 'compra' when op = 'V' then 'venda' else 'unknown' end) as operation from trades;
+
+-- preco medio
+select trades.id, symbol, op, date, count, value/count as preco, value, posicao, preco_medio, posicao * preco_medio as total
+    from trades join trades_auto on trades.id = trades_auto.id where symbol='MRVE3' and broker = 'rico';
