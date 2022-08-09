@@ -38,3 +38,5 @@ select *, (case when op = 'C' then 'compra' when op = 'V' then 'venda' else 'unk
 -- preco medio
 select trades.id, symbol, op, date, count, value/count as preco, value, posicao, preco_medio, posicao * preco_medio as total
     from trades join trades_auto on trades.id = trades_auto.id where symbol='MRVE3' and broker = 'rico';
+
+delete from trades_auto where 1;
