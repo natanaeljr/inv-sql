@@ -35,11 +35,30 @@ select symbol, op, date, sum(count) as count, sum(value) as value, sum(value)/su
 -- case/when example
 select *, (case when op = 'C' then 'compra' when op = 'V' then 'venda' else 'unknown' end) as operation from trades;
 
--- preco medio
+-- preco medio geral
 select trades.id, symbol, op, date, count, value/count as preco, value, posicao, preco_medio, posicao * preco_medio as total
-    from trades join trades_auto on trades.id = trades_auto.id where symbol='TSLA34' and broker = 'rico';
+    from trades join trades_auto on trades.id = trades_auto.id;
+
+-- preco medio w/ filter
+select trades.id, symbol, op, date, count, value/count as preco, value, posicao, preco_medio, posicao * preco_medio as total
+from trades join trades_auto on trades.id = trades_auto.id where symbol='MRVE3' and broker = 'rico';
+
+-- ISSUE: outdated position with no operation after split
+select trades.id, symbol, op, date, count, value/count as preco, value, posicao, preco_medio, posicao * preco_medio as total
+from trades join trades_auto on trades.id = trades_auto.id where symbol='WEGE3' and broker = 'clear';
 
 -- 'C', 'V' to buy and sell
 update trades set op = 'buy' where op = 'C';
 update trades set op = 'sell' where op = 'V';
 select op from trades where op <> 'buy' and op <> 'sell' group by op
+
+CREATE TABLE IF NOT EXISTS splits
+(
+    symbol TEXT not null,
+    date   date not null,
+    ratio  REAL not null,
+    constraint PK primary key (symbol, date)
+);
+
+insert into splits (symbol, date, ratio) values ('PRIO3', '2021-05-06', 5.0);
+drop table splits;
