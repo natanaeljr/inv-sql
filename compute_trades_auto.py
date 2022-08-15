@@ -11,6 +11,45 @@ from datetime import *
 #  consolidate position algo (gera tabela de posições atuais de ativos em custódia [considerar splits])
 
 
+# Define o número de ações compradas/vendidas no modo day-trade e no modo swing-trade, para cada operação em trades
+# O resultado é operation id, day_trade_count, swing_trade_count
+# na qual: day_trade_count + swing_trade_count = trades.count
+#
+# Método para day-trade:
+# combinar o primeiro negócio de compra com o primeiro de venda,
+# ou o primeiro negócio de venda com o primeiro de compra, sucessivamente.
+def compute_trades_report(trades):
+    trades_cache = []
+    trades_report = {}
+    # compute day-trade counts
+    for id, op, date, count, value in trades:
+        op_other = {'buy': 'sell', 'sell': 'buy'}[op]
+        init_count = count
+        # check for a previous counter-operation to liquidate day-trade
+        for trade in filter(lambda x: x[2] == date and x[1] == op_other and x[3] > 0, trades_cache):
+            trades_report.setdefault(trade[0], 0)
+            if trade[3] >= count:
+                trade[3] -= count
+                trades_report[trade[0]] += count
+                count = 0
+                break
+            else:
+                count -= trade[3]
+                trades_report[trade[0]] += trade[3]
+                trade[3] = 0
+        if count != init_count:
+            trades_report[id] = init_count - count
+        trades_cache.append([id, op, date, count, init_count, value])
+    # compute remaining swing-trade counts
+    for trade in trades_cache:
+        trades_report.setdefault(trade[0], 0)
+        trades_report[trade[0]] = (trades_report[trade[0]], trade[4] - trades_report[trade[0]])
+    # yield all day trades count
+    trades_report = dict(sorted(trades_report.items()))
+    for id, (day, swing) in trades_report.items():
+        yield id, day, swing
+
+
 # Calcula para cada símbolo:
 #  posição (número de ações atual),
 #  preço médio (sem custos)
@@ -22,7 +61,7 @@ from datetime import *
 # param splits: list of tuples with split events for this symbol ordered by date
 def compute_trades_auto(trades, splits):
     posicao = preco_medio = valor_total = 0
-    for _id, op, date_str, count, value in trades:
+    for id, op, date_str, count, value in trades:
         # adjust for splits
         date = datetime.strptime(date_str, '%Y-%m-%d').date()
         for split_date_str, ratio in splits[:]:  # splits is ordered by date
@@ -53,7 +92,7 @@ def compute_trades_auto(trades, splits):
                 valor_total = posicao * preco_medio
         else:
             raise Exception(f"Unknown OP {op}")
-        yield _id, posicao, preco_medio
+        yield id, posicao, preco_medio
 
 
 def execute_on_db():
@@ -146,5 +185,36 @@ def test_posicao_com_splits():
         (2, 30, 6.0),
         (3, 50, 7.6),
         (4, 110, 3.04),
+    ]
+    assert columns == expected
+
+
+def test_trades_report():
+    trades = [
+        # id, op, date, count, value
+        # day-trade liquidado:
+        (1, 'buy', '2022-01-01', 10, 100.0),
+        (2, 'sell', '2022-01-01', 10, 120.0),
+        # saiu comprado:
+        (3, 'buy', '2022-01-02', 20, 100.0),
+        (4, 'buy', '2022-01-02', 5, 100.0),
+        (5, 'sell', '2022-01-02', 15, 120.0),
+        # saiu vendido:
+        (6, 'sell', '2022-01-03', 15, 180.0),
+        (7, 'sell', '2022-01-03', 10, 120.0),
+        (8, 'buy', '2022-01-03', 10, 100.0),
+        (9, 'buy', '2022-01-03', 10, 110.0),
+    ]
+    columns = list(compute_trades_report(trades))
+    expected = [
+        (1, 10, 0),
+        (2, 10, 0),
+        (3, 15, 5),
+        (4, 0, 5),
+        (5, 15, 0),
+        (6, 15, 0),
+        (7, 5, 5),
+        (8, 10, 0),
+        (9, 10, 0),
     ]
     assert columns == expected
