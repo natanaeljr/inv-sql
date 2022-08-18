@@ -1,4 +1,5 @@
 import sqlite3
+from tarifas import *
 from datetime import *
 
 
@@ -22,11 +23,11 @@ def compute_trades_report(trades):
     trades_cache = []
     trades_report = {}
     # compute day-trade counts
-    for id, op, date, count, value in trades:
+    for id_, op, date_, count, value in trades:
         op_other = {'buy': 'sell', 'sell': 'buy'}[op]
         init_count = count
         # check for a previous counter-operation to liquidate day-trade
-        for trade in filter(lambda x: x[2] == date and x[1] == op_other and x[3] > 0, trades_cache):
+        for trade in filter(lambda x: x[2] == date_ and x[1] == op_other and x[3] > 0, trades_cache):
             trades_report.setdefault(trade[0], 0)
             if trade[3] >= count:
                 trade[3] -= count
@@ -38,16 +39,16 @@ def compute_trades_report(trades):
                 trades_report[trade[0]] += trade[3]
                 trade[3] = 0
         if count != init_count:
-            trades_report[id] = init_count - count
-        trades_cache.append([id, op, date, count, init_count, value])
+            trades_report[id_] = init_count - count
+        trades_cache.append([id_, op, date_, count, init_count, value])
     # compute remaining swing-trade counts
     for trade in trades_cache:
         trades_report.setdefault(trade[0], 0)
         trades_report[trade[0]] = (trades_report[trade[0]], trade[4] - trades_report[trade[0]])
     # yield all day trades count
     trades_report = dict(sorted(trades_report.items()))
-    for id, (day, swing) in trades_report.items():
-        yield id, day, swing
+    for id_, (day, swing) in trades_report.items():
+        yield id_, day, swing
 
 
 # Calcula para cada símbolo:
@@ -60,52 +61,64 @@ def compute_trades_report(trades):
 # param trades: list of tuples of trade info ordered by date
 # param splits: list of tuples with split events for this symbol ordered by date
 class YieldTradesAuto:
-    def __init__(self, trades, splits):
+    def __init__(self, broker, symbol, trades, splits):
+        self.broker = broker
+        self.symbol = symbol
         self.trades = trades
         self.splits = splits
-        self.posicao = self.preco_medio = self.valor_total = 0
+        self.posicao = 0  # posição acumulada de swing-trade
+        self.preco_medio = 0  # preço médio sem custos
+        self.valor_total = 0  # valor acumulado de aquisição da posição
+        self.custo_total = 0  # custos acumulados das operações
 
     def __iter__(self):
-        for id, op, date_str, count, value, day_count in self.trades:
+        for id_, op, date_str, count, value, day_count in self.trades:
             swing_count = count - day_count
             if swing_count == 0:  # skip day-trades
                 continue
-            self.__adjust_values_for_splits(date_str)
-            self.__add_swing_trade(op, value, swing_count)
-            yield id, self.posicao, self.preco_medio
+            date_ = datetime.strptime(date_str, '%Y-%m-%d').date()
+            self.__adjust_values_for_splits(date_)
+            self.__add_swing_trade(date_, op, value, swing_count)
+            yield id_, self.posicao, self.preco_medio
 
-    def __adjust_values_for_splits(self, date_str):
-        date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    def __adjust_values_for_splits(self, date_):
         for split_date_str, ratio in self.splits[:]:  # splits is ordered by date
             split_date = datetime.strptime(split_date_str, '%Y-%m-%d').date()
-            if split_date > date:  # remaining splits are in the future
+            if split_date > date_:  # remaining splits are in the future
                 break
             self.posicao *= ratio
             self.preco_medio /= ratio
             self.splits.remove((split_date_str, ratio))
 
-    def __add_swing_trade(self, op, value, swing_count):
+    def __add_swing_trade(self, date_, op, value, swing_count):
         # update accumulated values based on operation
         if op == 'buy':
             if self.posicao >= 0:  # acréscimo de posição comprada
                 self.posicao += swing_count
                 self.valor_total += value
                 self.preco_medio = self.valor_total / self.posicao
+                self.custo_total += self.custos_swing_trade(date_, value)
             else:  # liquidação de posição vendida
                 self.posicao += swing_count
                 self.preco_medio = self.preco_medio
                 self.valor_total = self.posicao * self.preco_medio
+                self.custo_total += 0
         elif op == 'sell':
             if self.posicao <= 0:  # acréscimo de posição vendida
                 self.posicao -= swing_count
                 self.valor_total -= value
                 self.preco_medio = self.valor_total / self.posicao
+                self.custo_total += 0
             else:  # liquidação de posição comprada
                 self.posicao -= swing_count
                 self.preco_medio = self.preco_medio
                 self.valor_total = self.posicao * self.preco_medio
+                self.custo_total += 0
         else:
             raise Exception(f"Unknown OP {op}")
+
+    def custos_swing_trade(self, date_, value):
+        return value * tarifas_b3(date_) + tarifas_corretora(self.broker, date_)
 
 
 def execute_on_db():
@@ -120,7 +133,7 @@ def execute_on_db():
         all_symbol_splits = dbcursor.execute(
             "SELECT date, ratio FROM splits WHERE symbol = ? ORDER BY date",
             (symbol,)).fetchall()
-        trades_auto += YieldTradesAuto(all_symbol_trades, all_symbol_splits)
+        trades_auto += YieldTradesAuto(broker, symbol, all_symbol_trades, all_symbol_splits)
     dbcursor.execute("DELETE FROM trades_auto WHERE 1")
     dbcursor.executemany("INSERT INTO trades_auto VALUES (?, ?, ?)", trades_auto)
     dbcon.commit()
