@@ -4,7 +4,6 @@ from datetime import *
 
 # TODO:
 #  liquidez + acréscimo em 1 operação
-#  determinação de operações day-trade vs swing-trade
 #  calculo de custo com taxas (tabela de tarifas, tabela de tipo de ação)
 #  update trades_auto ao invés de delete e insert all
 #  support manual overwrite (skip when column manual = Y)
@@ -60,43 +59,53 @@ def compute_trades_report(trades):
 # splits (desdobramento e grupamentos) são levados em consideração
 # param trades: list of tuples of trade info ordered by date
 # param splits: list of tuples with split events for this symbol ordered by date
-def compute_trades_auto(trades, splits):
-    posicao = preco_medio = valor_total = 0
-    for id, op, date_str, count, value, day_count in trades:
-        swing_count = count - day_count
-        if swing_count == 0:
-            continue
-        # adjust for splits
+class YieldTradesAuto:
+    def __init__(self, trades, splits):
+        self.trades = trades
+        self.splits = splits
+        self.posicao = self.preco_medio = self.valor_total = 0
+
+    def __iter__(self):
+        for id, op, date_str, count, value, day_count in self.trades:
+            swing_count = count - day_count
+            if swing_count == 0:  # skip day-trades
+                continue
+            self.__adjust_values_for_splits(date_str)
+            self.__add_swing_trade(op, value, swing_count)
+            yield id, self.posicao, self.preco_medio
+
+    def __adjust_values_for_splits(self, date_str):
         date = datetime.strptime(date_str, '%Y-%m-%d').date()
-        for split_date_str, ratio in splits[:]:  # splits is ordered by date
+        for split_date_str, ratio in self.splits[:]:  # splits is ordered by date
             split_date = datetime.strptime(split_date_str, '%Y-%m-%d').date()
-            if split_date > date:
+            if split_date > date:  # remaining splits are in the future
                 break
-            posicao *= ratio
-            preco_medio /= ratio
-            splits.remove((split_date_str, ratio))
+            self.posicao *= ratio
+            self.preco_medio /= ratio
+            self.splits.remove((split_date_str, ratio))
+
+    def __add_swing_trade(self, op, value, swing_count):
         # update accumulated values based on operation
         if op == 'buy':
-            if posicao >= 0:  # acréscimo de posição comprada
-                posicao += swing_count
-                valor_total += value
-                preco_medio = valor_total / posicao
+            if self.posicao >= 0:  # acréscimo de posição comprada
+                self.posicao += swing_count
+                self.valor_total += value
+                self.preco_medio = self.valor_total / self.posicao
             else:  # liquidação de posição vendida
-                posicao += swing_count
-                preco_medio = preco_medio
-                valor_total = posicao * preco_medio
+                self.posicao += swing_count
+                self.preco_medio = self.preco_medio
+                self.valor_total = self.posicao * self.preco_medio
         elif op == 'sell':
-            if posicao <= 0:  # acréscimo de posição vendida
-                posicao -= swing_count
-                valor_total -= value
-                preco_medio = valor_total / posicao
+            if self.posicao <= 0:  # acréscimo de posição vendida
+                self.posicao -= swing_count
+                self.valor_total -= value
+                self.preco_medio = self.valor_total / self.posicao
             else:  # liquidação de posição comprada
-                posicao -= swing_count
-                preco_medio = preco_medio
-                valor_total = posicao * preco_medio
+                self.posicao -= swing_count
+                self.preco_medio = self.preco_medio
+                self.valor_total = self.posicao * self.preco_medio
         else:
             raise Exception(f"Unknown OP {op}")
-        yield id, posicao, preco_medio
 
 
 def execute_on_db():
@@ -111,7 +120,7 @@ def execute_on_db():
         all_symbol_splits = dbcursor.execute(
             "SELECT date, ratio FROM splits WHERE symbol = ? ORDER BY date",
             (symbol,)).fetchall()
-        trades_auto += compute_trades_auto(all_symbol_trades, all_symbol_splits)
+        trades_auto += YieldTradesAuto(all_symbol_trades, all_symbol_splits)
     dbcursor.execute("DELETE FROM trades_auto WHERE 1")
     dbcursor.executemany("INSERT INTO trades_auto VALUES (?, ?, ?)", trades_auto)
     dbcon.commit()
@@ -150,11 +159,12 @@ def test_posicao_comprada():
     trades = [
         # id, op, date, count, value, day_trade_count
         (1, 'buy', '2022-01-01', 10, 100.0, 0),
-        (2, 'buy', '2022-02-02', 10, 120.0, 0),
+        (2, 'buy', '2022-02-02', 15, 120.0, 5),
         (3, 'sell', '2022-03-03', 5, 65.0, 0),
-        (4, 'sell', '2022-04-04', 15, 220.0, 0),
+        (4, 'sell', '2022-04-04', 20, 220.0, 5),
+        (5, 'sell', '2022-04-04', 10, 100.0, 10),  # day-trade
     ]
-    columns = list(compute_trades_auto(trades, []))
+    columns = list(YieldTradesAuto(trades, []))
     expected = [
         # id, posicao, preco_medio
         (1, 10, 10.0),
@@ -169,11 +179,12 @@ def test_posicao_vendida():
     trades = [
         # id, op, date, count, value
         (1, 'sell', '2022-01-01', 10, 100.0, 0),
-        (2, 'sell', '2022-02-02', 10, 120.0, 0),
+        (2, 'sell', '2022-02-02', 15, 120.0, 5),
         (3, 'buy', '2022-03-03', 5, 40.0, 0),
-        (4, 'buy', '2022-04-04', 15, 100.0, 0),
+        (4, 'buy', '2022-04-04', 20, 100.0, 5),
+        (5, 'buy', '2022-04-04', 10, 100.0, 10),  # day-trade
     ]
-    columns = list(compute_trades_auto(trades, []))
+    columns = list(YieldTradesAuto(trades, []))
     expected = [
         # id, posicao, preco_medio
         (1, -10, 10.0),
@@ -190,7 +201,7 @@ def test_posicao_com_splits():
         (1, 'buy', '2022-01-01', 10, 100.0, 0),
         (2, 'buy', '2022-01-02', 10, 80.0, 0),
         (3, 'buy', '2022-01-03', 20, 200.0, 0),
-        (4, 'sell', '2022-04-04', 15, 300.0, 0),
+        (4, 'sell', '2022-04-04', 25, 300.0, 10),
     ]
     splits = [
         # date, ratio
@@ -198,7 +209,7 @@ def test_posicao_com_splits():
         ('2022-02-02', 5.0),
         ('2022-03-03', 0.5),  # grupamento 2x
     ]
-    columns = list(compute_trades_auto(trades, splits))
+    columns = list(YieldTradesAuto(trades, splits))
     expected = [
         # id, posicao, preco_medio
         (1, 10, 10.0),
