@@ -11,7 +11,8 @@ from datetime import *
 #  consolidate position algo (gera tabela de posições atuais de ativos em custódia [considerar splits])
 
 
-# Define o número de ações compradas/vendidas no modo day-trade e no modo swing-trade, para cada operação em trades
+# Define o número de ações compradas/vendidas no modo day-trade e no modo swing-trade,
+# isto é, para cada operação em trades do mesmo símbolo.
 # O resultado é operation id, day_trade_count, swing_trade_count
 # na qual: day_trade_count + swing_trade_count = trades.count
 #
@@ -111,6 +112,19 @@ def execute_on_db():
     dbcon.commit()
 
 
+def execute_on_db2():
+    trades_report = []
+    symbols = dbcursor.execute("SELECT symbol, broker FROM trades GROUP BY symbol, broker").fetchall()
+    for symbol, broker in symbols:
+        all_symbol_trades = dbcursor.execute(
+            "SELECT id, op, date, count, value FROM trades WHERE symbol = ? AND broker = ? ORDER BY date",
+            (symbol, broker)).fetchall()
+        trades_report += compute_trades_report(all_symbol_trades)
+    dbcursor.execute("DELETE FROM trades_report WHERE 1")
+    dbcursor.executemany("INSERT INTO trades_report VALUES (?, ?, ?)", trades_report)
+    dbcon.commit()
+
+
 ###############################################################################
 # Main
 ###############################################################################
@@ -119,6 +133,7 @@ if __name__ == "__main__":
     dbcon = sqlite3.connect('db/inv.db')
     dbcursor = dbcon.cursor()
     execute_on_db()
+    execute_on_db2()
     dbcon.close()
 
 
