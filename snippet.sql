@@ -40,15 +40,15 @@ select trades.id, symbol, op, date, count, value/count as preco, value, posicao,
     from trades join trades_auto on trades.id = trades_auto.id;
 
 -- preco medio w/ filter
-select trades.id, symbol, op, date, count, value/count as preco, value, posicao, preco_medio, posicao * preco_medio as total
+select trades.id, broker, symbol, op, date, count, value/count as preco, value, posicao, preco_medio, posicao * preco_medio as total
 from trades join trades_auto on trades.id = trades_auto.id where symbol='MRVE3' and broker = 'rico';
 
 -- ISSUE: outdated position with no operation after split
-select trades.id, symbol, op, date, count, value/count as preco, value, posicao, preco_medio, posicao * preco_medio as total
+select trades.id, broker, symbol, op, date, count, value/count as preco, value, posicao, preco_medio, posicao * preco_medio as total
 from trades join trades_auto on trades.id = trades_auto.id where symbol='WEGE3' and broker = 'clear';
 
 -- preco medio geral com trades_report, entries com day e swing quantidades na mesma operação
-select trades.id, symbol, op, date, count, value/count as preco, value, posicao, preco_medio, posicao * preco_medio as total,
+select trades.id, broker, symbol, op, date, count, value/count as preco, value, posicao, preco_medio, posicao * preco_medio as total,
        day_trade_count, swing_trade_count
 from trades join trades_auto on trades.id = trades_auto.id join trades_report on trades.id = trades_report.id;
 

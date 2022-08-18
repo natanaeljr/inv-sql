@@ -62,7 +62,10 @@ def compute_trades_report(trades):
 # param splits: list of tuples with split events for this symbol ordered by date
 def compute_trades_auto(trades, splits):
     posicao = preco_medio = valor_total = 0
-    for id, op, date_str, count, value in trades:
+    for id, op, date_str, count, value, day_count in trades:
+        swing_count = count - day_count
+        if swing_count == 0:
+            continue
         # adjust for splits
         date = datetime.strptime(date_str, '%Y-%m-%d').date()
         for split_date_str, ratio in splits[:]:  # splits is ordered by date
@@ -75,20 +78,20 @@ def compute_trades_auto(trades, splits):
         # update accumulated values based on operation
         if op == 'buy':
             if posicao >= 0:  # acréscimo de posição comprada
-                posicao += count
+                posicao += swing_count
                 valor_total += value
                 preco_medio = valor_total / posicao
             else:  # liquidação de posição vendida
-                posicao += count
+                posicao += swing_count
                 preco_medio = preco_medio
                 valor_total = posicao * preco_medio
         elif op == 'sell':
             if posicao <= 0:  # acréscimo de posição vendida
-                posicao -= count
+                posicao -= swing_count
                 valor_total -= value
                 preco_medio = valor_total / posicao
             else:  # liquidação de posição comprada
-                posicao -= count
+                posicao -= swing_count
                 preco_medio = preco_medio
                 valor_total = posicao * preco_medio
         else:
@@ -101,7 +104,9 @@ def execute_on_db():
     symbols = dbcursor.execute("SELECT symbol, broker FROM trades GROUP BY symbol, broker").fetchall()
     for symbol, broker in symbols:
         all_symbol_trades = dbcursor.execute(
-            "SELECT id, op, date, count, value FROM trades WHERE symbol = ? AND broker = ? ORDER BY date",
+            "SELECT trades.id, op, date, count, value, day_trade_count FROM trades " +
+            "LEFT JOIN trades_report ON trades.id = trades_report.id " +
+            "WHERE symbol = ? AND broker = ? ORDER BY date",
             (symbol, broker)).fetchall()
         all_symbol_splits = dbcursor.execute(
             "SELECT date, ratio FROM splits WHERE symbol = ? ORDER BY date",
@@ -143,11 +148,11 @@ if __name__ == "__main__":
 
 def test_posicao_comprada():
     trades = [
-        # id, op, date, count, value
-        (1, 'buy', '2022-01-01', 10, 100.0),
-        (2, 'buy', '2022-02-02', 10, 120.0),
-        (3, 'sell', '2022-03-03', 5, 65.0),
-        (4, 'sell', '2022-04-04', 15, 220.0),
+        # id, op, date, count, value, day_trade_count
+        (1, 'buy', '2022-01-01', 10, 100.0, 0),
+        (2, 'buy', '2022-02-02', 10, 120.0, 0),
+        (3, 'sell', '2022-03-03', 5, 65.0, 0),
+        (4, 'sell', '2022-04-04', 15, 220.0, 0),
     ]
     columns = list(compute_trades_auto(trades, []))
     expected = [
@@ -163,10 +168,10 @@ def test_posicao_comprada():
 def test_posicao_vendida():
     trades = [
         # id, op, date, count, value
-        (1, 'sell', '2022-01-01', 10, 100.0),
-        (2, 'sell', '2022-02-02', 10, 120.0),
-        (3, 'buy', '2022-03-03', 5, 40.0),
-        (4, 'buy', '2022-04-04', 15, 100.0),
+        (1, 'sell', '2022-01-01', 10, 100.0, 0),
+        (2, 'sell', '2022-02-02', 10, 120.0, 0),
+        (3, 'buy', '2022-03-03', 5, 40.0, 0),
+        (4, 'buy', '2022-04-04', 15, 100.0, 0),
     ]
     columns = list(compute_trades_auto(trades, []))
     expected = [
@@ -182,10 +187,10 @@ def test_posicao_vendida():
 def test_posicao_com_splits():
     trades = [
         # id, op, date, count, value
-        (1, 'buy', '2022-01-01', 10, 100.0),
-        (2, 'buy', '2022-01-02', 10, 80.0),
-        (3, 'buy', '2022-01-03', 20, 200.0),
-        (4, 'sell', '2022-04-04', 15, 300.0),
+        (1, 'buy', '2022-01-01', 10, 100.0, 0),
+        (2, 'buy', '2022-01-02', 10, 80.0, 0),
+        (3, 'buy', '2022-01-03', 20, 200.0, 0),
+        (4, 'sell', '2022-04-04', 15, 300.0, 0),
     ]
     splits = [
         # date, ratio
