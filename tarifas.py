@@ -11,7 +11,7 @@ def tarifas_b3(date_):
     return taxa_negociacao + taxa_liquidacao
 
 
-def tarifas_corretora(date_, broker):
+def tarifas_corretora(broker, date_):
     if broker == 'rico':
         return tarifas_rico(date_)
     elif broker == 'clear':
