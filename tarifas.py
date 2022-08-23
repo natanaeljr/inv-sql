@@ -16,6 +16,8 @@ def tarifas_corretora(broker, date_):
         return tarifas_rico(date_)
     elif broker == 'clear':
         return tarifas_clear(date_)
+    elif broker == 'itau':
+        return 0  # todo
     else:
         raise Exception(f"Unsupported Broker: {broker}")
 

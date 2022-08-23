@@ -67,3 +67,6 @@ CREATE TABLE IF NOT EXISTS splits
 
 insert into splits (symbol, date, ratio) values ('PRIO3', '2021-05-06', 5.0);
 drop table splits;
+
+-- ganho desde o inicio
+select sum(ganho_preco), sum(ganho_custo) from trades_auto;

@@ -92,13 +92,14 @@ class YieldTradesAuto:
                 break
             self.posicao *= ratio
             self.preco_medio /= ratio
+            self.custo_medio /= ratio
             self.splits.remove((split_date_str, ratio))
 
     def __add_swing_trade(self, date_, op, value, swing_count):
-        # update accumulated values based on operation
         custo_b3 = tarifas_b3(date_) * value
         custo_broker = tarifas_corretora(self.broker, date_)
         ganho_preco = ganho_custo = None
+        # update accumulated values based on operation
         if op == 'buy':
             if self.posicao >= 0:  # acréscimo de posição comprada
                 self.posicao += swing_count
@@ -113,7 +114,7 @@ class YieldTradesAuto:
                 self.preco_total = self.posicao * self.preco_medio
                 self.custo_total = self.posicao * self.custo_medio
                 ganho_preco = (swing_count * self.preco_medio) - value
-                ganho_custo = (swing_count * self.custo_medio) - (value - custo_b3 - custo_broker)
+                ganho_custo = (swing_count * self.custo_medio) - value + custo_b3 + custo_broker
         elif op == 'sell':
             if self.posicao <= 0:  # acréscimo de posição vendida
                 self.posicao -= swing_count
@@ -128,7 +129,7 @@ class YieldTradesAuto:
                 self.preco_total = self.posicao * self.preco_medio
                 self.custo_total = self.posicao * self.custo_medio
                 ganho_preco = value - (swing_count * self.preco_medio)
-                ganho_custo = (value - custo_b3 - custo_broker) - (swing_count * self.custo_medio)
+                ganho_custo = value - (swing_count * self.custo_medio) - custo_b3 - custo_broker
         else:
             raise Exception(f"Unknown OP {op}")
         # calcula custos
@@ -149,7 +150,7 @@ def execute_on_db():
             (symbol,)).fetchall()
         trades_auto += list(YieldTradesAuto(broker, symbol, all_symbol_trades, all_symbol_splits))
     dbcursor.execute("DELETE FROM trades_auto WHERE 1")
-    dbcursor.executemany("INSERT INTO trades_auto VALUES (?, ?, ?)", trades_auto)
+    dbcursor.executemany("INSERT INTO trades_auto VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", trades_auto)
     dbcon.commit()
 
 
