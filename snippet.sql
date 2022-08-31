@@ -48,8 +48,8 @@ select trades.id, broker, symbol, op, date, count, value/count as preco, value, 
 from trades join trades_auto on trades.id = trades_auto.id where symbol='WEGE3' and broker = 'clear';
 
 -- preco medio geral com trades_report, entries com day e swing quantidades na mesma operação
-select trades.id, broker, symbol, op, date, count, value/count as preco, value, posicao, preco_medio, posicao * preco_medio as total,
-       day_trade_count, swing_trade_count
+select trades.id,broker,symbol,op,date,count,value/count as preco,value,posicao,preco_medio,posicao * preco_medio as total,
+       day_count,swing_count
 from trades join trades_auto on trades.id = trades_auto.id join trades_report on trades.id = trades_report.id;
 
 -- 'C', 'V' to buy and sell
@@ -66,7 +66,18 @@ CREATE TABLE IF NOT EXISTS splits
 );
 
 insert into splits (symbol, date, ratio) values ('PRIO3', '2021-05-06', 5.0);
-drop table splits;
 
 -- ganho desde o inicio
 select sum(ganho_preco), sum(ganho_custo) from trades_auto;
+
+-- ganho desde o inicio por corretora
+select broker, sum(ganho_preco), sum(ganho_custo) from trades_auto join trades on trades.id = trades_auto.id group by broker;
+
+-- ganho desde no ano por corretora
+select broker, sum(ganho_preco), sum(ganho_custo) from trades_auto join trades on trades.id = trades_auto.id where date >= date('2022-01-01') and date <= date('now') group by broker;
+
+-- total de swing vendas em um período
+select sum((value / count) * swing_count) as total
+from trades join trades_report on trades.id = trades_report.id
+         where op = 'sell' and swing_count > 0
+           and date >= date('2022-04-01') and date <= date('2022-04-01','start of month','+1 month','-1 day')

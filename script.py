@@ -1,6 +1,6 @@
 import sqlite3
-from tarifas import *
-from datetime import *
+from datetime import datetime
+from tarifas import tarifas_b3, tarifas_corretora
 
 
 # TODO:
@@ -13,8 +13,8 @@ from datetime import *
 
 # Define o número de ações compradas/vendidas no modo day-trade e no modo swing-trade,
 # isto é, para cada operação em trades do mesmo símbolo.
-# O resultado é operation id, day_trade_count, swing_trade_count
-# na qual: day_trade_count + swing_trade_count = trades.count
+# O resultado é operation id, day_count, swing_count
+# na qual: day_count + swing_count = trades.count
 #
 # Método para day-trade:
 # combinar o primeiro negócio de compra com o primeiro de venda,
@@ -141,7 +141,7 @@ def execute_on_db():
     symbols = dbcursor.execute("SELECT symbol, broker FROM trades GROUP BY symbol, broker").fetchall()
     for symbol, broker in symbols:
         all_symbol_trades = dbcursor.execute(
-            "SELECT trades.id, op, date, count, value, day_trade_count FROM trades " +
+            "SELECT trades.id, op, date, count, value, day_count FROM trades " +
             "LEFT JOIN trades_report ON trades.id = trades_report.id " +
             "WHERE symbol = ? AND broker = ? ORDER BY date",
             (symbol, broker)).fetchall()
@@ -185,7 +185,7 @@ if __name__ == "__main__":
 
 def test_posicao_comprada():
     trades = [
-        # id, op, date, count, value, day_trade_count
+        # id, op, date, count, value, day_count
         (1, 'buy', '2020-01-01', 10, 100.0, 0),
         (2, 'buy', '2021-02-02', 15, 120.0, 5),
         (3, 'sell', '2022-03-03', 5, 65.0, 0),
