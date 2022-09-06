@@ -80,4 +80,13 @@ select broker, sum(ganho_preco), sum(ganho_custo) from trades_auto join trades o
 select sum((value / count) * swing_count) as total
 from trades join trades_report on trades.id = trades_report.id
          where op = 'sell' and swing_count > 0
-           and date >= date('2022-04-01') and date <= date('2022-04-01','start of month','+1 month','-1 day')
+           and date >= date('2022-04-01') and date <= date('2022-04-01','start of month','+1 month','-1 day');
+
+-- symbols class check
+select * from symbols where class != 'AÇÃO' AND class != 'BDR' AND class != 'ETF' AND class != 'FII';
+
+-- symbols with no cnpj
+select * from symbols where class = 'FII';
+
+-- check for missing symbols
+select code from trades LEFT JOIN symbols on trades.symbol = symbols.code where symbols.code is null GROUP BY code;

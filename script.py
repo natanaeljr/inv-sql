@@ -6,10 +6,10 @@ from tarifas import tarifas_b3, tarifas_corretora
 # TODO:
 #  liquidez + acréscimo em 1 operação
 #  calculo de custo com taxas (tabela de tarifas, tabela de tipo de ação)
+#  suporte a troca de símbolo
 #  update trades_auto ao invés de delete e insert all
 #  support manual overwrite (skip when column manual = Y)
 #  consolidate position algo (gera tabela de posições atuais de ativos em custódia [considerar splits])
-
 
 # Define o número de ações compradas/vendidas no modo day-trade e no modo swing-trade,
 # isto é, para cada operação em trades do mesmo símbolo.
