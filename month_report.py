@@ -81,16 +81,35 @@ class YieldMonthReport:
         return custo_b3, custo_broker, ganho_preco, ganho_custo
 
 
-def execute_on_db():
-    (first_date,) = dbcursor.execute("SELECT min(date) FROM trades ORDER BY date").fetchall()[0]
-    (last_date,) = dbcursor.execute("SELECT max(date) FROM trades ORDER BY date").fetchall()[0]
+# Yield month range from begin_date.month to end_date.month
+class MonthRange:
+    def __init__(self, begin_date, end_date):
+        self.begin_date = begin_date.replace(day=1)
+        self.end_date = end_date.replace(day=calendar.monthrange(end_date.year, end_date.month)[1])
 
-    date_begin = datetime.strptime(first_date, '%Y-%m-%d').date().replace(day=1)
-    date_end = date_begin.replace(day=calendar.monthrange(date_begin.year, date_begin.month)[1])
-    entries = dbcursor.execute("SELECT * FROM trades WHERE op = 'sell' AND date >= ? AND date <= ?",
-                               (date_begin.strftime("%Y-%m-%d"), date_end.strftime("%Y-%m-%d"))).fetchall()
-    for entry in entries:
-        print(entry)
+    def __iter__(self):
+        first = self.begin_date
+        while first < self.end_date:
+            last = first.replace(day=calendar.monthrange(first.year, first.month)[1])
+            yield first, last
+            first += relativedelta(months=+1)
+
+
+def execute_on_db():
+    # retrieve oldest and newest trade entry in the DB
+    oldest_date, = dbcursor.execute("SELECT min(date) FROM trades ORDER BY date").fetchall()[0]
+    newest_date, = dbcursor.execute("SELECT max(date) FROM trades ORDER BY date").fetchall()[0]
+    oldest_date = datetime.strptime(oldest_date, '%Y-%m-%d').date()
+    newest_date = datetime.strptime(newest_date, '%Y-%m-%d').date()
+    # loop through months in range from oldest to newest entry
+    for first, last in MonthRange(oldest_date, newest_date):
+        trades = dbcursor.execute("SELECT value FROM trades WHERE op = 'sell' AND date >= ? AND date <= ?",
+                                  (first.strftime("%Y-%m-%d"), last.strftime("%Y-%m-%d"))).fetchall()
+        print(trades)
+        total = 0
+        for value, in trades:
+            total += value
+        print(first, last, total)
 
 
 ###############################################################################
@@ -103,71 +122,6 @@ if __name__ == "__main__":
     execute_on_db()
     dbcon.close()
 
-
 ###############################################################################
 # Tests
 ###############################################################################
-
-def test_posicao_comprada():
-    trades = [
-        # id, op, date, count, value, day_count
-        (1, 'buy', '2020-01-01', 10, 100.0, 0),
-        (2, 'buy', '2021-02-02', 15, 120.0, 5),
-        (3, 'sell', '2022-03-03', 5, 65.0, 0),
-        (4, 'sell', '2022-04-04', 20, 220.0, 5),
-        (5, 'sell', '2022-04-04', 10, 100.0, 10),  # day-trade
-    ]
-    columns = list(YieldTradesAuto('rico', 'PETR4', trades, []))
-    expected = [
-        # id, posicao, preco_medio, preco_total, custo_b3, custo_broker, custo_medio, custo_total, ganho_preco, ganho_custo
-        (1, 10, 10.0, 100.0, 0.030506000000000002, 8.3000000025, 10.83305060025, 108.3305060025, None, None),
-        (2, 20, 11.0, 220.0, 0.036000000000000004, 0.0, 11.418325300125, 228.3665060025, None, None),
-        (3, 15, 11.0, 165.0, 0.019500000000000003, 0.0, 11.418325300125, 171.274879501875, 10.0, 7.888873499375009),
-        (4, 0, 11.0, 0.0, 0.066, 0.0, 11.418325300125, 0.0, 55.0, 48.65912049812499),
-    ]
-    assert columns == expected
-
-
-def test_posicao_vendida():
-    trades = [
-        # id, op, date, count, value
-        (1, 'sell', '2020-01-01', 10, 100.0, 0),
-        (2, 'sell', '2021-02-02', 15, 120.0, 5),
-        (3, 'buy', '2022-03-03', 5, 40.0, 0),
-        (4, 'buy', '2022-04-04', 20, 100.0, 5),
-        (5, 'buy', '2022-04-04', 10, 100.0, 10),  # day-trade
-    ]
-    columns = list(YieldTradesAuto('rico', 'PETR4', trades, []))
-    expected = [
-        # id, posicao, preco_medio, custo_b3, custo_broker
-        (1, -10, 10.0, 0.030506000000000002, 8.3000000025),
-        (2, -20, 11.0, 0.036000000000000004, 0.0),
-        (3, -15, 11.0, 0.012, 0.0),
-        (4, 0, 11.0, 0.030000000000000002, 0.0)
-    ]
-    assert columns == expected
-
-
-def test_posicao_com_splits():
-    trades = [
-        # id, op, date, count, value
-        (1, 'buy', '2022-01-01', 10, 100.0, 0),
-        (2, 'buy', '2022-01-02', 10, 80.0, 0),
-        (3, 'buy', '2022-01-03', 20, 200.0, 0),
-        (4, 'sell', '2022-04-04', 25, 300.0, 10),
-    ]
-    splits = [
-        # date, ratio
-        ('2022-01-02', 2.0),
-        ('2022-02-02', 5.0),
-        ('2022-03-03', 0.5),  # grupamento 2x
-    ]
-    columns = list(YieldTradesAuto('rico', 'PETR4', trades, splits))
-    expected = [
-        # id, posicao, preco_medio
-        (1, 10, 10.0, 0.030000000000000002, 0.0),
-        (2, 30, 6.0, 0.024, 0.0),
-        (3, 50, 7.6, 0.060000000000000005, 0.0),
-        (4, 110, 3.04, 0.09000000000000001, 0.0)
-    ]
-    assert columns == expected
