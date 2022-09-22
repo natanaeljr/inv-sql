@@ -93,4 +93,22 @@ select code from trades LEFT JOIN symbols on trades.symbol = symbols.code where 
 
 select min(date) from trades order by date;
 
-INSERT INTO month_report
+drop table month_report;
+
+CREATE TABLE IF NOT EXISTS "month_report"
+(
+    date_begin         date not null,
+    date_end           date not null,
+    swing_sells_total  float,
+    swing_sells_bdr    float,
+    swing_sells_etf    float,
+    swing_sells_fii    float,
+    swing_gain_total   float,
+    swing_gain_bdr_etf float,
+    swing_ir_base      float,
+    swing_ir_value     float,
+    swing_irrf         float,
+    constraint PK_month
+        primary key (date_begin, date_end)
+);
+

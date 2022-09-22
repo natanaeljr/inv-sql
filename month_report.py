@@ -7,13 +7,22 @@ from dateutil.relativedelta import relativedelta
 def month_report(begin_date, end_date, trades, symbols):
     swing_sells_total = 0
     swing_sells_bdr = 0
+    swing_sells_etf = 0
+    swing_sells_fii = 0
     for symbol, date, count, value in trades:
         swing_sells_total += value
         class_ = symbols[symbol]
         if class_ == 'BDR':
             swing_sells_bdr += value
+        elif class_ == 'ETF':
+            swing_sells_etf += value
+        elif class_ == 'FII':
+            swing_sells_fii += value
+        elif class_ != 'AÇÃO':
+            raise Exception(f"Unknown symbol {symbol} class {class_}")
 
-    return begin_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"), swing_sells_total, swing_sells_bdr
+    return begin_date.strftime("%Y-%m-%d"), end_date.strftime(
+        "%Y-%m-%d"), swing_sells_total, swing_sells_bdr, swing_sells_etf, swing_sells_fii
 
 
 # Yield month range from begin_date.month to end_date.month
@@ -46,7 +55,9 @@ def execute_on_db():
         report.append(month_report(first, last, trades, dict(symbols)))
     dbcursor.execute("DELETE FROM month_report WHERE 1")
     dbcursor.executemany(
-        "INSERT INTO month_report(date_begin, date_end, swing_sells_total, swing_sells_bdr) VALUES (?, ?, ?, ?)",
+        "INSERT INTO month_report(date_begin, date_end,"
+        "swing_sells_total, swing_sells_bdr, swing_sells_etf, swing_sells_fii)"
+        "VALUES (?, ?, ?, ?, ?, ?)",
         report)
     dbcon.commit()
 
