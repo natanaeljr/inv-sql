@@ -2,83 +2,18 @@ import sqlite3
 import calendar
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-from tarifas import tarifas_b3, tarifas_corretora
 
 
-class YieldMonthReport:
-    def __init__(self, broker, symbol, trades, splits):
-        self.broker = broker
-        self.symbol = symbol
-        self.trades = trades
-        self.splits = splits
-        self.posicao = 0  # posição acumulada de swing-trade
-        self.preco_medio = 0  # preço médio sem custos
-        self.custo_medio = 0  # preço médio com custos
-        self.preco_total = 0  # preço acumulado de aquisição da posição sem custos
-        self.custo_total = 0  # preço acumulado de aquisição da posição com custos
+def month_report(begin_date, end_date, trades, symbols):
+    swing_sells_total = 0
+    swing_sells_bdr = 0
+    for symbol, date, count, value in trades:
+        swing_sells_total += value
+        class_ = symbols[symbol]
+        if class_ == 'BDR':
+            swing_sells_bdr += value
 
-    def __iter__(self):
-        for id_, op, date_str, count, value, day_count in self.trades:
-            swing_count = count - day_count
-            if swing_count == 0:  # skip day-trades
-                continue
-            date_ = datetime.strptime(date_str, '%Y-%m-%d').date()
-            self.__adjust_values_for_splits(date_)
-            result = self.__add_swing_trade(date_, op, value, swing_count)
-            custo_b3, custo_broker, ganho_preco, ganho_custo = result
-            yield id_, self.posicao, self.preco_medio, self.preco_total, \
-                  custo_b3, custo_broker, self.custo_medio, self.custo_total, \
-                  ganho_preco, ganho_custo
-
-    def __adjust_values_for_splits(self, date_):
-        for split_date_str, ratio in self.splits[:]:  # splits is ordered by date
-            split_date = datetime.strptime(split_date_str, '%Y-%m-%d').date()
-            if split_date > date_:  # remaining splits are in the future
-                break
-            self.posicao *= ratio
-            self.preco_medio /= ratio
-            self.custo_medio /= ratio
-            self.splits.remove((split_date_str, ratio))
-
-    def __add_swing_trade(self, date_, op, value, swing_count):
-        custo_b3 = tarifas_b3(date_) * value
-        custo_broker = tarifas_corretora(self.broker, date_)
-        ganho_preco = ganho_custo = None
-        # update accumulated values based on operation
-        if op == 'buy':
-            if self.posicao >= 0:  # acréscimo de posição comprada
-                self.posicao += swing_count
-                self.preco_total += value
-                self.custo_total += value + custo_b3 + custo_broker
-                self.preco_medio = self.preco_total / self.posicao
-                self.custo_medio = self.custo_total / self.posicao
-            else:  # liquidação de posição vendida
-                self.posicao += swing_count
-                self.preco_medio = self.preco_medio
-                self.custo_medio = self.custo_medio
-                self.preco_total = self.posicao * self.preco_medio
-                self.custo_total = self.posicao * self.custo_medio
-                ganho_preco = (swing_count * self.preco_medio) - value
-                ganho_custo = (swing_count * self.custo_medio) - value + custo_b3 + custo_broker
-        elif op == 'sell':
-            if self.posicao <= 0:  # acréscimo de posição vendida
-                self.posicao -= swing_count
-                self.preco_total -= value
-                self.custo_total -= value - custo_b3 - custo_broker
-                self.preco_medio = self.preco_total / self.posicao
-                self.custo_medio = self.custo_total / self.posicao
-            else:  # liquidação de posição comprada
-                self.posicao -= swing_count
-                self.preco_medio = self.preco_medio
-                self.custo_medio = self.custo_medio
-                self.preco_total = self.posicao * self.preco_medio
-                self.custo_total = self.posicao * self.custo_medio
-                ganho_preco = value - (swing_count * self.preco_medio)
-                ganho_custo = value - (swing_count * self.custo_medio) - custo_b3 - custo_broker
-        else:
-            raise Exception(f"Unknown OP {op}")
-        # calcula custos
-        return custo_b3, custo_broker, ganho_preco, ganho_custo
+    return begin_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"), swing_sells_total, swing_sells_bdr
 
 
 # Yield month range from begin_date.month to end_date.month
@@ -96,20 +31,24 @@ class MonthRange:
 
 
 def execute_on_db():
+    symbols = dbcursor.execute("SELECT code, class FROM symbols ORDER BY code").fetchall()
     # retrieve oldest and newest trade entry in the DB
     oldest_date, = dbcursor.execute("SELECT min(date) FROM trades ORDER BY date").fetchall()[0]
     newest_date, = dbcursor.execute("SELECT max(date) FROM trades ORDER BY date").fetchall()[0]
     oldest_date = datetime.strptime(oldest_date, '%Y-%m-%d').date()
     newest_date = datetime.strptime(newest_date, '%Y-%m-%d').date()
     # loop through months in range from oldest to newest entry
+    report = []
     for first, last in MonthRange(oldest_date, newest_date):
-        trades = dbcursor.execute("SELECT value FROM trades WHERE op = 'sell' AND date >= ? AND date <= ?",
-                                  (first.strftime("%Y-%m-%d"), last.strftime("%Y-%m-%d"))).fetchall()
-        print(trades)
-        total = 0
-        for value, in trades:
-            total += value
-        print(first, last, total)
+        trades = dbcursor.execute(
+            "SELECT symbol, date, count, value FROM trades WHERE op = 'sell' AND date >= ? AND date <= ?",
+            (first.strftime("%Y-%m-%d"), last.strftime("%Y-%m-%d"))).fetchall()
+        report.append(month_report(first, last, trades, dict(symbols)))
+    dbcursor.execute("DELETE FROM month_report WHERE 1")
+    dbcursor.executemany(
+        "INSERT INTO month_report(date_begin, date_end, swing_sells_total, swing_sells_bdr) VALUES (?, ?, ?, ?)",
+        report)
+    dbcon.commit()
 
 
 ###############################################################################

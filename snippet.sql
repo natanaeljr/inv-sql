@@ -92,3 +92,5 @@ select * from symbols where class = 'FII';
 select code from trades LEFT JOIN symbols on trades.symbol = symbols.code where symbols.code is null GROUP BY code;
 
 select min(date) from trades order by date;
+
+INSERT INTO month_report
