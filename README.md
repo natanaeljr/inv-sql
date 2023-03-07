@@ -21,19 +21,19 @@ generate analysis data in the form of other DB tables.
 
 #### Generated tables
 - **trades_auto**  
-    Table to contain auto-generated analysis data over _trades_ table.  
-    Generated data is referenced to each row in _trades_ given the posição_atual, preço_medio, preço_total, custos
-    e granhos no momento de cada operação.
+    Table to contain generated analysis data over _trades_ table.  
+    Generated data is referenced to each row in _trades_ giving the posição_atual, preço_medio, preço_total, custos
+    and gains for each operation record.
 - **trades_report**  
-    Table to contain number of stocks trades in _day_ or _swing_ type.
-    Used for calculating closed positions and taxes for each trade.
+    Table to contain count of stocks trades separated _day_ or _swing_ type for each operation record.  
+    Used for calculating closed positions and taxes at the moment of each trade operation.
 - **month_report**  
-    Table to contain monthly reports of swing trades counts by type of stock, total gains and final tax (IR) values.
+    Table to contain monthly reports of swing trades counts by type of stock, total gains and final tax (IR) values.  
     Should be consulted in order know how much should be paid in taxes each month.
 
 #### Backup tables
-- **carteira_bkp**: Table containing all rows from previously manually managed INV spreadsheet.
+- **carteira_bkp**: Table containing all rows from previously manually managed INV spreadsheet.  
     Left as is as for backup only and should not be modified.
 - **tradesBkp**: Copied from _trades_ table a given time, for testing.  
-    Its meaning was lost. To be deleted if not used anymore.
+    Its meaning was lost. To be deleted in the future if not used anymore.
     
