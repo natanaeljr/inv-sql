@@ -120,7 +120,7 @@ def execute_on_db():
 ###############################################################################
 
 if __name__ == "__main__":
-    dbcon = sqlite3.connect('db/inv.db')
+    dbcon = sqlite3.connect('../db/inv.db')
     dbcursor = dbcon.cursor()
     execute_on_db()
     dbcon.close()
